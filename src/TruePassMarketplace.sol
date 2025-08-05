@@ -10,6 +10,11 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
+/**
+ * @title TruePassMarketplace
+ * @dev Marketplace contract for secondary ticket sales
+ */
+
 
 contract TruePassMarketplace is ReentrancyGuard, Pausable, Ownable {
     using Counters for Counters.Counter;
