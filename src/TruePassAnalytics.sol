@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title TruePassAnalytics
@@ -75,7 +68,7 @@ contract TruePassAnalytics is Ownable {
         if (keccak256(abi.encodePacked(_metricType)) == keccak256(abi.encodePacked("ticket_sold"))) {
             metrics.ticketsSold++;
             metrics.totalRevenue += _value;
-            metrics.averagePrice = metrics.totalRevenue / metrics.ticketsSold;
+            metrics.averagePrice = metrics.ticketsSold > 0 ? metrics.totalRevenue / metrics.ticketsSold : 0;
             platformMetrics.totalTicketsSold++;
             platformMetrics.totalRevenue += _value;
         } else if (keccak256(abi.encodePacked(_metricType)) == keccak256(abi.encodePacked("ticket_resold"))) {
@@ -119,47 +112,5 @@ contract TruePassAnalytics is Ownable {
     function updateContracts(address _ticketContract, address _marketplaceContract) external onlyOwner {
         ticketContract = _ticketContract;
         marketplaceContract = _marketplaceContract;
-    }
-}
-    
-    function updatePlatformTreasury(address _newTreasury) external onlyOwner {
-        require(_newTreasury != address(0), "Invalid address");
-        platformTreasury = _newTreasury;
-    }
-    
-    function updateEmergencyAdmin(address _newAdmin) external onlyOwner {
-        require(_newAdmin != address(0), "Invalid address");
-        emergencyAdmin = _newAdmin;
-    }
-    
-    /**
-     * @dev Deactivate event in emergency
-     */
-    function deactivateEvent(uint256 _eventId) external {
-        require(msg.sender == owner() || msg.sender == emergencyAdmin, "Not authorized");
-        require(events[_eventId].creator != address(0), "Event does not exist");
-        events[_eventId].isActive = false;
-    }
-    
-    // Required overrides
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal override(ERC721, ERC721Enumerable) {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
-    }
-    
-    function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
-        super._burn(tokenId);
-    }
-    
-    function tokenURI(uint256 tokenId) public view override(ERC721, ERC721URIStorage) returns (string memory) {
-        return super.tokenURI(tokenId);
-    }
-    
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC721Enumerable, ERC721URIStorage) returns (bool) {
-        return super.supportsInterface(interfaceId);
     }
 }

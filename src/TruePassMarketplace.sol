@@ -238,3 +238,4 @@ contract TruePassMarketplace is ReentrancyGuard, Pausable, Ownable {
     function unpause() external onlyOwner {
         _unpause();
 }
+}

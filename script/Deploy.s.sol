@@ -6,7 +6,7 @@ import "forge-std/Script.sol";
 
 import "../src/TruePassTicketNFT.sol";
 import "../src/TruePassMarketplace.sol";
-import "../src/TruePassFactory.sol";z
+import "../src/TruePassFactory.sol";
 import "../src/TruePassGovernance.sol";
 import "../src/TruePassAnalytics.sol";
 
@@ -31,10 +31,10 @@ contract Deploy is Script {
 
         console.log("Deployer:", deployer);
         console.log("Platform treasury:", _platformTreasury);
-        console.log("Emergency admin:", _emergencyAdmin);
+        console.log("Emergency admin:", _emergency_admin());
 
         // 1. Deploy TruePassTicketNFT
-        TruePassTicketNFT ticket = new TruePassTicketNFT(_platformTreasury, _emergencyAdmin);
+        TruePassTicketNFT ticket = new TruePassTicketNFT(_platformTreasury, _emergency_admin());
         console.log("TruePassTicketNFT deployed to:", address(ticket));
 
         // 2. Deploy TruePassMarketplace
