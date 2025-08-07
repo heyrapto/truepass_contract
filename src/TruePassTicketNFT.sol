@@ -10,6 +10,11 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
+interface ITruePassAnalytics {
+    function updateEventMetrics(uint256 eventId, string memory metricType, uint256 value) external;
+    function updateCreatorMetrics(address creator, uint256 revenue) external;
+}
+
 /**
  * @title TruePassTicketNFT
  * @dev Main NFT contract for TruePass tickets with Camp Network IP integration
@@ -70,6 +75,7 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
     // Platform addresses
     address public platformTreasury;
     address public emergencyAdmin;
+    ITruePassAnalytics public analyticsContract;
     
     // Events
     event EventCreated(uint256 indexed eventId, address indexed creator, string name, uint256 ticketPrice, uint256 maxSupply);
@@ -159,6 +165,12 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         creatorEvents[msg.sender].push(eventId);
         
         emit EventCreated(eventId, msg.sender, _name, _ticketPrice, _maxSupply);
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            analyticsContract.updateEventMetrics(eventId, "event_created", 1);
+        }
+        
         return eventId;
     }
     
@@ -230,6 +242,14 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         // Transfer payments
         payable(platformTreasury).transfer(platformFeeAmount);
         payable(eventData.creator).transfer(creatorAmount);
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            for (uint256 i = 0; i < _quantity; i++) {
+                analyticsContract.updateEventMetrics(_eventId, "ticket_sold", eventData.ticketPrice);
+            }
+            analyticsContract.updateCreatorMetrics(eventData.creator, creatorAmount);
+        }
     }
     
     /**
@@ -248,6 +268,11 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         ticket.isScanned = true;
         
         emit TicketScanned(_tokenId, ticket.eventId, msg.sender);
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            analyticsContract.updateEventMetrics(ticket.eventId, "ticket_scanned", 1);
+        }
     }
     
     /**
@@ -260,6 +285,11 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         
         eventData.eventCompleted = true;
         emit EventCompleted(_eventId, msg.sender);
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            analyticsContract.updateEventMetrics(_eventId, "event_completed", 1);
+        }
     }
     
     /**
@@ -283,14 +313,19 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         _setTokenURI(_tokenId, _newTokenURI);
         
         emit TicketTransformed(_tokenId, ticket.eventId, _newTokenURI);
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            analyticsContract.updateEventMetrics(ticket.eventId, "ticket_transformed", 1);
+        }
     }
     
     /**
-     * @dev Resell ticket (with price restrictions)
+     * @dev Resell ticket (with price restrictions) - Approval for marketplace
      */
-    function resellTicket(
+    function approveTicketForResale(
         uint256 _tokenId,
-        uint256 _price
+        address _marketplaceContract
     ) external onlyTokenOwner(_tokenId) whenNotPaused {
         require(_exists(_tokenId), "Token does not exist");
         
@@ -300,15 +335,13 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         require(eventData.isActive && !eventData.eventCompleted, "Event not active for resale");
         require(block.timestamp < eventData.eventDate, "Event has started");
         require(!ticket.isScanned, "Cannot resell scanned ticket");
-        require(_price <= eventData.maxResalePrice, "Price exceeds maximum");
-        require(_price >= eventData.ticketPrice / 2, "Price too low");
         
-        // Approve this contract to handle the transfer
-        approve(address(this), _tokenId);
+        // Approve the marketplace contract to handle the transfer
+        approve(_marketplaceContract, _tokenId);
     }
     
     /**
-     * @dev Buy a resold ticket
+     * @dev Buy a resold ticket (legacy function - use marketplace instead)
      */
     function buyResoldTicket(uint256 _tokenId) external payable nonReentrant whenNotPaused {
         require(_exists(_tokenId), "Token does not exist");
@@ -347,6 +380,12 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         emit TicketResold(_tokenId, seller, msg.sender, msg.value);
         if (royaltyAmount > 0) {
             emit RoyaltyPaid(ticket.eventId, eventData.creator, royaltyAmount);
+        }
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            analyticsContract.updateEventMetrics(ticket.eventId, "ticket_resold", msg.value);
+            analyticsContract.updateCreatorMetrics(eventData.creator, royaltyAmount);
         }
     }
     
@@ -424,24 +463,42 @@ contract TruePassTicketNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownabl
         _unpause();
     }
     
-    function updateMarketplaceTreasury(address _newTreasury) external onlyOwner {
+    function updatePlatformTreasury(address _newTreasury) external onlyOwner {
         require(_newTreasury != address(0), "Invalid address");
-        marketplaceTreasury = _newTreasury;
+        platformTreasury = _newTreasury;
     }
-    
-    /**
-     * @dev Emergency cancel listing (admin only)
-     */
-    function emergencyCancelListing(uint256 _listingId) external onlyOwner listingExists(_listingId) {
-        Listing storage listing = listings[_listingId];
-        if (listing.isActive) {
-            listing.isActive = false;
-            delete tokenToListing[listing.tokenId];
-            
-            // Return ticket to seller
-            ticketContract.transferFrom(address(this), listing.seller, listing.tokenId);
-            
-            emit ListingCancelled(_listingId, listing.tokenId, listing.seller);
-        }
+
+    function setAnalyticsContract(address _analyticsContract) external onlyOwner {
+        analyticsContract = ITruePassAnalytics(_analyticsContract);
+    }
+
+    // Required overrides for ERC721 multiple inheritance
+    function _beforeTokenTransfer(address from, address to, uint256 tokenId, uint256 batchSize)
+        internal
+        override(ERC721, ERC721Enumerable)
+    {
+        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+    }
+
+    function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
+        super._burn(tokenId);
+    }
+
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        override(ERC721, ERC721URIStorage)
+        returns (string memory)
+    {
+        return super.tokenURI(tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, ERC721Enumerable, ERC721URIStorage)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
     }
 }

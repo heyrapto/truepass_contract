@@ -31,10 +31,10 @@ contract Deploy is Script {
 
         console.log("Deployer:", deployer);
         console.log("Platform treasury:", _platformTreasury);
-        console.log("Emergency admin:", _emergency_admin());
+        console.log("Emergency admin:", _emergencyAdmin);
 
         // 1. Deploy TruePassTicketNFT
-        TruePassTicketNFT ticket = new TruePassTicketNFT(_platformTreasury, _emergency_admin());
+        TruePassTicketNFT ticket = new TruePassTicketNFT(_platformTreasury, _emergencyAdmin);
         console.log("TruePassTicketNFT deployed to:", address(ticket));
 
         // 2. Deploy TruePassMarketplace
@@ -42,7 +42,7 @@ contract Deploy is Script {
         console.log("TruePassMarketplace deployed to:", address(marketplace));
 
         // 3. Deploy TruePassFactory
-        TruePassFactory factory = new TruePassFactory(_platformTreasury, _emergency_admin());
+        TruePassFactory factory = new TruePassFactory(_platformTreasury, _emergencyAdmin);
         console.log("TruePassFactory deployed to:", address(factory));
 
         // 4. Deploy TruePassGovernance
@@ -57,7 +57,7 @@ contract Deploy is Script {
     }
 
     // Helper to avoid repeating envAddress call inside inline expression (keeps logs tidy)
-    function _emergency_admin() internal view returns (address) {
+    function _emergencyAdmin() internal view returns (address) {
         address emergencyAdmin = vm.envAddress("EMERGENCY_ADMIN");
         if (emergencyAdmin == address(0)) {
             return msg.sender;
