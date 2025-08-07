@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
+
+import "./TruePassTicketNFT.sol";
+
+interface ITruePassAnalytics {
+    function updateEventMetrics(uint256 eventId, string memory metricType, uint256 value) external;
+    function updateCreatorMetrics(address creator, uint256 revenue) external;
+}
 
 /**
  * @title TruePassMarketplace
@@ -39,6 +42,7 @@ contract TruePassMarketplace is ReentrancyGuard, Pausable, Ownable {
     uint256 public constant PERCENTAGE_BASE = 10000;
     
     address public marketplaceTreasury;
+    ITruePassAnalytics public analyticsContract;
     
     event TicketListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price);
     event TicketSold(uint256 indexed listingId, uint256 indexed tokenId, address indexed buyer, uint256 price);
@@ -140,6 +144,12 @@ contract TruePassMarketplace is ReentrancyGuard, Pausable, Ownable {
         payable(listing.seller).transfer(sellerAmount);
         
         emit TicketSold(_listingId, listing.tokenId, msg.sender, listing.price);
+        
+        // Update analytics
+        if (address(analyticsContract) != address(0)) {
+            analyticsContract.updateEventMetrics(ticket.eventId, "ticket_resold", listing.price);
+            analyticsContract.updateCreatorMetrics(eventData.creator, royaltyAmount);
+        }
     }
     
     /**
@@ -237,5 +247,30 @@ contract TruePassMarketplace is ReentrancyGuard, Pausable, Ownable {
     
     function unpause() external onlyOwner {
         _unpause();
-}
+    }
+
+    function updateMarketplaceTreasury(address _newTreasury) external onlyOwner {
+        require(_newTreasury != address(0), "Invalid address");
+        marketplaceTreasury = _newTreasury;
+    }
+
+    function setAnalyticsContract(address _analyticsContract) external onlyOwner {
+        analyticsContract = ITruePassAnalytics(_analyticsContract);
+    }
+
+    /**
+     * @dev Emergency cancel listing (admin only)
+     */
+    function emergencyCancelListing(uint256 _listingId) external onlyOwner listingExists(_listingId) {
+        Listing storage listing = listings[_listingId];
+        if (listing.isActive) {
+            listing.isActive = false;
+            delete tokenToListing[listing.tokenId];
+            
+            // Return ticket to seller
+            ticketContract.transferFrom(address(this), listing.seller, listing.tokenId);
+            
+            emit ListingCancelled(_listingId, listing.tokenId, listing.seller);
+        }
+    }
 }
